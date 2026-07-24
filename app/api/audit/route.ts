@@ -1,14 +1,11 @@
 import { generateText, Output } from 'ai'
-import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { z } from 'zod'
 import type { AuditEvent, Claim, Evidence } from '@/lib/audit-types'
 
 export const maxDuration = 60
 
-const google = createGoogleGenerativeAI({
-  apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-})
-const MODEL = google('gemini-2.5-flash')
+// Routed through the Vercel AI Gateway. xAI (Grok) requires AI_GATEWAY_API_KEY.
+const MODEL = 'xai/grok-4.1-fast-non-reasoning'
 
 // ---------------------------------------------------------------------------
 // Schemas (server-side validation for each agent's structured output)
@@ -154,11 +151,11 @@ export async function POST(req: Request) {
     })
   }
 
-  if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
+  if (!process.env.AI_GATEWAY_API_KEY) {
     return new Response(
       JSON.stringify({
         error:
-          'GOOGLE_GENERATIVE_AI_API_KEY is not set. Add it to run audits.',
+          'AI_GATEWAY_API_KEY is not set. Add it to run audits with Grok.',
       }),
       { status: 500, headers: { 'content-type': 'application/json' } },
     )
