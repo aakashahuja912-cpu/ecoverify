@@ -1,12 +1,16 @@
 import { generateText, Output } from 'ai'
+import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { z } from 'zod'
 import type { AuditEvent, Claim, Evidence } from '@/lib/audit-types'
 
 export const maxDuration = 60
 
-// Uses the Vercel AI Gateway (Google is zero-config in v0), so no provider
-// package or API key is required — just pass the model string.
-const MODEL = 'google/gemini-2.5-flash'
+// Uses a direct Google Generative AI key (no Vercel AI Gateway), so it bypasses
+// the Gateway credit-card requirement. Set GOOGLE_GENERATIVE_AI_API_KEY.
+const google = createGoogleGenerativeAI({
+  apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+})
+const MODEL = google('gemini-2.5-flash')
 
 // ---------------------------------------------------------------------------
 // Schemas (server-side validation for each agent's structured output)
@@ -150,6 +154,16 @@ export async function POST(req: Request) {
       status: 400,
       headers: { 'content-type': 'application/json' },
     })
+  }
+
+  if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
+    return new Response(
+      JSON.stringify({
+        error:
+          'GOOGLE_GENERATIVE_AI_API_KEY is not set. Add your Gemini API key to run audits.',
+      }),
+      { status: 500, headers: { 'content-type': 'application/json' } },
+    )
   }
 
   const encoder = new TextEncoder()
