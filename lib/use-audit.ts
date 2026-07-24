@@ -110,7 +110,13 @@ export function useAudit() {
 
         if (!res.ok || !res.body) {
           const msg = await res.text().catch(() => '')
-          throw new Error(msg || 'Request failed')
+          let parsed = msg
+          try {
+            parsed = (JSON.parse(msg) as { error?: string }).error || msg
+          } catch {
+            // keep raw text
+          }
+          throw new Error(parsed || 'Request failed')
         }
 
         const reader = res.body.getReader()

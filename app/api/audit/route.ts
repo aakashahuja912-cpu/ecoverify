@@ -1,10 +1,14 @@
 import { generateText, Output } from 'ai'
+import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { z } from 'zod'
 import type { AuditEvent, Claim, Evidence } from '@/lib/audit-types'
 
 export const maxDuration = 60
 
-const MODEL = 'openai/gpt-4.1'
+const google = createGoogleGenerativeAI({
+  apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+})
+const MODEL = google('gemini-2.5-flash')
 
 // ---------------------------------------------------------------------------
 // Schemas (server-side validation for each agent's structured output)
@@ -148,6 +152,16 @@ export async function POST(req: Request) {
       status: 400,
       headers: { 'content-type': 'application/json' },
     })
+  }
+
+  if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
+    return new Response(
+      JSON.stringify({
+        error:
+          'GOOGLE_GENERATIVE_AI_API_KEY is not set. Add it to run audits.',
+      }),
+      { status: 500, headers: { 'content-type': 'application/json' } },
+    )
   }
 
   const encoder = new TextEncoder()
