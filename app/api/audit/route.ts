@@ -10,7 +10,7 @@ export const maxDuration = 60
 const google = createGoogleGenerativeAI({
   apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
 })
-const MODEL = google('gemini-2.5-flash')
+const MODEL = google('gemini-3.6-flash')
 
 // ---------------------------------------------------------------------------
 // Schemas (server-side validation for each agent's structured output)
