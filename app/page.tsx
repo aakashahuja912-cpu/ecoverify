@@ -1,47 +1,75 @@
+import { Leaf, ShieldCheck, ScanEye, Radar } from 'lucide-react'
+import { AuditApp } from '@/components/audit-app'
+
 export default function Page() {
   return (
-    <main
-      style={{
-        colorScheme: 'light dark',
-        position: 'relative',
-        display: 'flex',
-        minHeight: '100vh',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'light-dark(#fff, #000)',
-        color: 'light-dark(#000, #fff)',
-      }}
-    >
-      <svg
-        aria-hidden="true"
-        style={{ width: 80, height: 80 }}
-        width={80}
-        height={80}
-        fill="none"
-        viewBox="0 0 20 20"
-        xmlns="http://www.w3.org/2000/svg"
-        stroke="currentColor"
-        strokeWidth="0.5"
-      >
-        <path
-          d="M14.2 14.2H17V6.9375C17 4.76288 15.2371 3 13.0625 3H5.8V5.8M14.2 14.2V7.79063L7.79062 14.2H14.2ZM14.2 14.2V17H6.9375C4.76288 17 3 15.2371 3 13.0625V5.8H5.8M5.8 5.8V12.2313L12.2313 5.8H5.8Z"
-          strokeLinejoin="round"
-        />
-      </svg>
-      <p
-        style={{
-          position: 'absolute',
-          left: '50%',
-          top: 'calc(50% + 56px)',
-          transform: 'translateX(-50%)',
-          whiteSpace: 'nowrap',
-          fontSize: '14px',
-          fontWeight: 500,
-          color: 'light-dark(#71717a, #a1a1aa)',
-        }}
-      >
-        Your v0 generation will show here.
-      </p>
+    <main className="min-h-screen bg-background">
+      {/* Header */}
+      <header className="border-b border-border bg-card/60 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
+          <div className="flex items-center gap-2.5">
+            <div className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+              <Leaf className="size-5" />
+            </div>
+            <div className="leading-tight">
+              <p className="font-display text-base font-bold text-foreground">
+                EcoVerify
+              </p>
+              <p className="text-xs text-muted-foreground">
+                The Greenwash Sentinel
+              </p>
+            </div>
+          </div>
+          <span className="hidden items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs font-medium text-muted-foreground sm:flex">
+            <ShieldCheck className="size-3.5 text-primary" />
+            Multi-agent audit
+          </span>
+        </div>
+      </header>
+
+      {/* Hero */}
+      <section className="mx-auto max-w-6xl px-4 pt-12 pb-6 text-center">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/8 px-3 py-1 text-xs font-medium text-primary">
+          <Radar className="size-3.5" />
+          Autonomous claim investigation
+        </span>
+        <h1 className="mx-auto mt-4 max-w-3xl text-balance font-display text-4xl font-bold leading-tight text-foreground sm:text-5xl">
+          Turn corporate green marketing into auditable truth.
+        </h1>
+        <p className="mx-auto mt-4 max-w-2xl text-pretty leading-relaxed text-muted-foreground">
+          EcoVerify deploys three AI agents that read what a company claims about
+          sustainability, cross-examine those claims against the public record,
+          and output a defensible Greenwash Risk Score with cited evidence.
+        </p>
+
+        <div className="mx-auto mt-6 flex max-w-xl flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
+          <span className="flex items-center gap-1.5">
+            <ScanEye className="size-4 text-primary" />
+            Extracts verifiable claims
+          </span>
+          <span className="flex items-center gap-1.5">
+            <ShieldCheck className="size-4 text-primary" />
+            Challenges with public evidence
+          </span>
+          <span className="flex items-center gap-1.5">
+            <Leaf className="size-4 text-primary" />
+            Scores greenwash risk
+          </span>
+        </div>
+      </section>
+
+      {/* App */}
+      <section className="mx-auto max-w-6xl px-4 py-8">
+        <AuditApp />
+      </section>
+
+      {/* Footer */}
+      <footer className="mt-8 border-t border-border">
+        <div className="mx-auto max-w-6xl px-4 py-6 text-center text-xs text-muted-foreground">
+          EcoVerify · Adversarial sustainability auditing for ESG analysts,
+          regulators, and journalists.
+        </div>
+      </footer>
     </main>
   )
 }
