@@ -8,6 +8,9 @@ export const maxDuration = 60
 const google = createGoogleGenerativeAI({
   apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
 })
+// gemini-flash-latest is the model this API key has free-tier access to.
+// The pipeline is capped at 3 requests per audit (fact-finder + one batched
+// challenger + judge) to stay within its per-minute free quota.
 const MODEL = google('gemini-flash-latest')
 
 // ---------------------------------------------------------------------------
@@ -62,7 +65,14 @@ const evidenceSchema = z.object({
 })
 
 const challengerSchema = z.object({
-  evidence: z.array(evidenceSchema).max(4),
+  claims: z
+    .array(
+      z.object({
+        claimId: z.string().describe('The id of the claim being evaluated.'),
+        evidence: z.array(evidenceSchema).max(4),
+      }),
+    )
+    .describe('One entry per claim id supplied, in the same order.'),
 })
 
 const judgeSchema = z.object({
@@ -204,37 +214,59 @@ export async function POST(req: Request) {
         send({ type: 'claims', claims })
         send({ type: 'agent', agent: 'fact-finder', state: 'done' })
 
-        // ---- Agent 2: Challenger (per-claim, parallel) ----------------
+        // ---- Agent 2: Challenger (single batched call) ----------------
+        // All claims are evaluated in ONE request to stay well within the
+        // provider's free-tier rate limits (this pipeline otherwise fires a
+        // burst of parallel calls that trips per-minute quotas).
         send({ type: 'agent', agent: 'challenger', state: 'running' })
-        const evidenceByClaim = await Promise.all(
-          claims.map(async (claim) => {
-            try {
-              const challenger = await generateText({
-                model: MODEL,
-                output: Output.object({ schema: challengerSchema }),
-                system:
-                  'You are the Challenger, a skeptical investigative journalist. For the given corporate sustainability claim, search your knowledge of the PUBLIC RECORD (regulatory databases, court filings, reputable news, NGO reports, scientific studies, financial disclosures) for evidence that contradicts, contextualizes, or supports it. Be rigorous and fair. Never invent specific URLs. If you have no documented evidence, return a single honest "context" item stating that no corroborating public evidence was found and independent verification is required. Prefer contradicting or contextual evidence where the record genuinely warrants scrutiny.',
-                prompt: `Company: ${company}\nClaim: "${claim.text}"\nCategory: ${claim.category}\nMetric: ${claim.metric ?? 'none'}\nTimeframe: ${claim.timeframe ?? 'none'}`,
-              })
-              const evidence: Evidence[] = challenger.output.evidence
-              send({ type: 'evidence', claimId: claim.id, evidence })
-              return { claimId: claim.id, evidence }
-            } catch {
-              const evidence: Evidence[] = [
-                {
-                  source: 'EcoVerify (pipeline)',
-                  sourceType: 'news',
-                  stance: 'context',
-                  summary:
-                    'Evidence retrieval failed for this claim; treat as unverified.',
-                  credibility: 0,
-                },
-              ]
-              send({ type: 'evidence', claimId: claim.id, evidence })
-              return { claimId: claim.id, evidence }
-            }
-          }),
-        )
+        const claimsList = claims
+          .map(
+            (c) =>
+              `${c.id} :: "${c.text}" | category: ${c.category} | metric: ${c.metric ?? 'none'} | timeframe: ${c.timeframe ?? 'none'}`,
+          )
+          .join('\n')
+
+        const noEvidence = (claimId: string): Evidence[] => [
+          {
+            source: 'EcoVerify (pipeline)',
+            sourceType: 'news',
+            stance: 'context',
+            summary:
+              'Evidence retrieval failed for this claim; treat as unverified.',
+            credibility: 0,
+          },
+        ]
+
+        let evidenceByClaim: { claimId: string; evidence: Evidence[] }[] = []
+        try {
+          const challenger = await generateText({
+            model: MODEL,
+            output: Output.object({ schema: challengerSchema }),
+            system:
+              'You are the Challenger, a skeptical investigative journalist. For EACH corporate sustainability claim provided, search your knowledge of the PUBLIC RECORD (regulatory databases, court filings, reputable news, NGO reports, scientific studies, financial disclosures) for up to 4 pieces of evidence that contradict, contextualize, or support it. Be rigorous and fair. Never invent specific URLs. If you have no documented evidence for a claim, return a single honest "context" item stating that no corroborating public evidence was found and independent verification is required. Prefer contradicting or contextual evidence where the record genuinely warrants scrutiny. Return exactly one entry per claim id, preserving the given ids.',
+            prompt: `Company: ${company}\n\nClaims to investigate:\n${claimsList}`,
+          })
+
+          evidenceByClaim = claims.map((claim) => {
+            const match = challenger.output.claims.find(
+              (e) => e.claimId === claim.id,
+            )
+            const evidence: Evidence[] =
+              match && match.evidence.length > 0
+                ? match.evidence
+                : noEvidence(claim.id)
+            return { claimId: claim.id, evidence }
+          })
+        } catch {
+          evidenceByClaim = claims.map((claim) => ({
+            claimId: claim.id,
+            evidence: noEvidence(claim.id),
+          }))
+        }
+
+        for (const item of evidenceByClaim) {
+          send({ type: 'evidence', claimId: item.claimId, evidence: item.evidence })
+        }
         send({ type: 'agent', agent: 'challenger', state: 'done' })
 
         // ---- Agent 3: Judge -------------------------------------------
