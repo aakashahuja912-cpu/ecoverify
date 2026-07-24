@@ -14,6 +14,7 @@ export interface AuditState {
   status: 'idle' | 'running' | 'done' | 'error'
   company: string | null
   fetched: boolean
+  keyPoolSize: number
   agents: Record<AgentId, AgentState | 'idle'>
   claims: Claim[]
   evidence: Record<string, Evidence[]>
@@ -31,6 +32,7 @@ const initialState: AuditState = {
   status: 'idle',
   company: null,
   fetched: false,
+  keyPoolSize: 0,
   agents: { 'fact-finder': 'idle', challenger: 'idle', judge: 'idle' },
   claims: [],
   evidence: {},
@@ -52,7 +54,12 @@ export function useAudit() {
     setState((prev) => {
       switch (event.type) {
         case 'meta':
-          return { ...prev, company: event.company, fetched: event.fetched }
+          return {
+            ...prev,
+            company: event.company,
+            fetched: event.fetched,
+            keyPoolSize: event.keyPoolSize,
+          }
         case 'agent':
           return {
             ...prev,

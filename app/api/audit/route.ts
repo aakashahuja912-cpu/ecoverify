@@ -1,16 +1,16 @@
 import { generateText, Output } from 'ai'
-import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { z } from 'zod'
 import type { AuditEvent, Claim, Evidence } from '@/lib/audit-types'
+import { createRotatingKeyPool } from '@/lib/rotating-keys'
 
 export const maxDuration = 60
 
-// Uses a direct Google Generative AI key (no Vercel AI Gateway), so it bypasses
-// the Gateway credit-card requirement. Set GOOGLE_GENERATIVE_AI_API_KEY.
-const google = createGoogleGenerativeAI({
-  apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-})
-const MODEL = google('gemini-3.6-flash')
+// Uses direct Google Generative AI keys (no Vercel AI Gateway), so it bypasses
+// the Gateway credit-card requirement. Configure one or more keys via
+// GOOGLE_GENERATIVE_AI_API_KEY (comma-separated) and/or
+// GOOGLE_GENERATIVE_AI_API_KEY_1..N — the pool rotates across them and fails
+// over automatically on rate-limit / quota / auth errors.
+const MODEL_ID = 'gemini-3.6-flash'
 
 // ---------------------------------------------------------------------------
 // Schemas (server-side validation for each agent's structured output)
@@ -156,11 +156,12 @@ export async function POST(req: Request) {
     })
   }
 
-  if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
+  const keyPool = createRotatingKeyPool()
+  if (!keyPool) {
     return new Response(
       JSON.stringify({
         error:
-          'GOOGLE_GENERATIVE_AI_API_KEY is not set. Add your Gemini API key to run audits.',
+          'No Gemini API key configured. Set GOOGLE_GENERATIVE_AI_API_KEY (one key, or several comma-separated) to run audits.',
       }),
       { status: 500, headers: { 'content-type': 'application/json' } },
     )
@@ -184,16 +185,18 @@ export async function POST(req: Request) {
 
         // ---- Agent 1: Fact-Finder -------------------------------------
         send({ type: 'agent', agent: 'fact-finder', state: 'running' })
-        const factFinder = await generateText({
-          model: MODEL,
+        const factFinder = await keyPool.run(MODEL_ID, (model) =>
+          generateText({
+          model,
           output: Output.object({ schema: factFinderSchema }),
           system:
             'You are the Fact-Finder, an investigative sustainability analyst. Extract 3-5 of the most concrete, checkable environmental/social claims a company makes about itself. Prefer claims with numbers, targets, dates, or specific practices. Flag vague marketing puffery.',
           prompt: pageContext,
-        })
+          }),
+        )
 
         const company = factFinder.output.company || fallbackName
-        send({ type: 'meta', company, fetched, url })
+        send({ type: 'meta', company, fetched, url, keyPoolSize: keyPool.size })
 
         const claims: Claim[] = factFinder.output.claims.map((c, i) => ({
           id: `claim-${i + 1}`,
@@ -211,13 +214,15 @@ export async function POST(req: Request) {
         const evidenceByClaim = await Promise.all(
           claims.map(async (claim) => {
             try {
-              const challenger = await generateText({
-                model: MODEL,
+              const challenger = await keyPool.run(MODEL_ID, (model) =>
+                generateText({
+                model,
                 output: Output.object({ schema: challengerSchema }),
                 system:
                   'You are the Challenger, a skeptical investigative journalist. For the given corporate sustainability claim, search your knowledge of the PUBLIC RECORD (regulatory databases, court filings, reputable news, NGO reports, scientific studies, financial disclosures) for evidence that contradicts, contextualizes, or supports it. Be rigorous and fair. Never invent specific URLs. If you have no documented evidence, return a single honest "context" item stating that no corroborating public evidence was found and independent verification is required. Prefer contradicting or contextual evidence where the record genuinely warrants scrutiny.',
                 prompt: `Company: ${company}\nClaim: "${claim.text}"\nCategory: ${claim.category}\nMetric: ${claim.metric ?? 'none'}\nTimeframe: ${claim.timeframe ?? 'none'}`,
-              })
+                }),
+              )
               const evidence: Evidence[] = challenger.output.evidence
               send({ type: 'evidence', claimId: claim.id, evidence })
               return { claimId: claim.id, evidence }
@@ -255,13 +260,15 @@ export async function POST(req: Request) {
           })
           .join('\n\n')
 
-        const judge = await generateText({
-          model: MODEL,
+        const judge = await keyPool.run(MODEL_ID, (model) =>
+          generateText({
+          model,
           output: Output.object({ schema: judgeSchema }),
           system:
             'You are the Judge. For each claim, weigh the claim against its evidence and issue a verdict: "verified" (strong support, no contradiction), "needs_context" (technically true but omits material context), "misleading" (contradicted or cherry-picked), or "unsubstantiated" (vague/no evidence). Assign a riskLevel and a confidence. Then compute an overall greenwash risk score 0-100 (higher = more greenwashing risk), weighting contradicted and unsubstantiated claims heavily. Ground every reasoning line in the supplied evidence. Return a verdict for every claim id.',
           prompt: `Company: ${company}\n\nDossier:\n${dossier}`,
-        })
+          }),
+        )
 
         for (const v of judge.output.verdicts) {
           send({ type: 'verdict', verdict: v })

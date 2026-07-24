@@ -8,6 +8,7 @@ import {
   RotateCcw,
   Building2,
   Info,
+  KeyRound,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useAudit } from '@/lib/use-audit'
@@ -136,13 +137,25 @@ export function AuditApp() {
             <h2 className="font-display text-lg font-semibold text-foreground">
               Agent pipeline
             </h2>
-            {state.company && (
-              <span className="flex items-center gap-1.5 rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
-                <Building2 className="size-3.5" />
-                {state.company}
-                {!state.fetched && ' · from knowledge base'}
-              </span>
-            )}
+            <div className="flex flex-wrap items-center gap-2">
+              {state.keyPoolSize > 0 && (
+                <span
+                  className="flex items-center gap-1.5 rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground"
+                  title="Number of Gemini API keys rotating across audit requests"
+                >
+                  <KeyRound className="size-3.5" />
+                  {state.keyPoolSize} key{state.keyPoolSize === 1 ? '' : 's'} in
+                  rotation
+                </span>
+              )}
+              {state.company && (
+                <span className="flex items-center gap-1.5 rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
+                  <Building2 className="size-3.5" />
+                  {state.company}
+                  {!state.fetched && ' · from knowledge base'}
+                </span>
+              )}
+            </div>
           </div>
           <AgentPipeline agents={state.agents} />
         </section>
