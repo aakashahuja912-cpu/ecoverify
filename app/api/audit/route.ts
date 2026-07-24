@@ -1,16 +1,18 @@
 import { generateText, Output } from 'ai'
-import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { z } from 'zod'
 import type { AuditEvent, Claim, Evidence } from '@/lib/audit-types'
 
 export const maxDuration = 60
 
-// Uses a direct Google Generative AI key (no Vercel AI Gateway), so it bypasses
-// the Gateway credit-card requirement. Set GOOGLE_GENERATIVE_AI_API_KEY.
-const google = createGoogleGenerativeAI({
-  apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-})
-const MODEL = google('gemini-3.6-flash')
+// Routes through the Vercel AI Gateway (default transport in the AI SDK).
+// No provider API key lives in this code; the Gateway handles auth and billing.
+// We pass an ordered list of models so that if the primary provider is rate-
+// limited or out of credits, the pipeline automatically fails over to the next.
+const MODELS = [
+  'google/gemini-2.5-flash',
+  'openai/gpt-4o-mini',
+  'anthropic/claude-3-5-haiku',
+] as const
 
 // ---------------------------------------------------------------------------
 // Schemas (server-side validation for each agent's structured output)
@@ -142,6 +144,24 @@ function domainToName(url: string): string {
   }
 }
 
+// Runs a generateText call against the Gateway, trying each model in MODELS
+// until one succeeds. If a model is rate-limited / out of credits, we advance
+// to the next provider so a single exhausted key never breaks the audit.
+async function generateWithFallback<T extends Parameters<typeof generateText>[0]>(
+  args: Omit<T, 'model'>,
+) {
+  let lastErr: unknown
+  for (const model of MODELS) {
+    try {
+      return await generateText({ ...(args as object), model } as T)
+    } catch (err) {
+      lastErr = err
+      console.log(`[v0] model "${model}" failed, trying next fallback:`, (err as Error)?.message)
+    }
+  }
+  throw lastErr
+}
+
 // ---------------------------------------------------------------------------
 // Route
 // ---------------------------------------------------------------------------
@@ -154,16 +174,6 @@ export async function POST(req: Request) {
       status: 400,
       headers: { 'content-type': 'application/json' },
     })
-  }
-
-  if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
-    return new Response(
-      JSON.stringify({
-        error:
-          'GOOGLE_GENERATIVE_AI_API_KEY is not set. Add your Gemini API key to run audits.',
-      }),
-      { status: 500, headers: { 'content-type': 'application/json' } },
-    )
   }
 
   const encoder = new TextEncoder()
@@ -184,8 +194,7 @@ export async function POST(req: Request) {
 
         // ---- Agent 1: Fact-Finder -------------------------------------
         send({ type: 'agent', agent: 'fact-finder', state: 'running' })
-        const factFinder = await generateText({
-          model: MODEL,
+        const factFinder = await generateWithFallback({
           output: Output.object({ schema: factFinderSchema }),
           system:
             'You are the Fact-Finder, an investigative sustainability analyst. Extract 3-5 of the most concrete, checkable environmental/social claims a company makes about itself. Prefer claims with numbers, targets, dates, or specific practices. Flag vague marketing puffery.',
@@ -211,8 +220,7 @@ export async function POST(req: Request) {
         const evidenceByClaim = await Promise.all(
           claims.map(async (claim) => {
             try {
-              const challenger = await generateText({
-                model: MODEL,
+              const challenger = await generateWithFallback({
                 output: Output.object({ schema: challengerSchema }),
                 system:
                   'You are the Challenger, a skeptical investigative journalist. For the given corporate sustainability claim, search your knowledge of the PUBLIC RECORD (regulatory databases, court filings, reputable news, NGO reports, scientific studies, financial disclosures) for evidence that contradicts, contextualizes, or supports it. Be rigorous and fair. Never invent specific URLs. If you have no documented evidence, return a single honest "context" item stating that no corroborating public evidence was found and independent verification is required. Prefer contradicting or contextual evidence where the record genuinely warrants scrutiny.',
@@ -255,8 +263,7 @@ export async function POST(req: Request) {
           })
           .join('\n\n')
 
-        const judge = await generateText({
-          model: MODEL,
+        const judge = await generateWithFallback({
           output: Output.object({ schema: judgeSchema }),
           system:
             'You are the Judge. For each claim, weigh the claim against its evidence and issue a verdict: "verified" (strong support, no contradiction), "needs_context" (technically true but omits material context), "misleading" (contradicted or cherry-picked), or "unsubstantiated" (vague/no evidence). Assign a riskLevel and a confidence. Then compute an overall greenwash risk score 0-100 (higher = more greenwashing risk), weighting contradicted and unsubstantiated claims heavily. Ground every reasoning line in the supplied evidence. Return a verdict for every claim id.',
