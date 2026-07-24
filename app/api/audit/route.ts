@@ -1,17 +1,12 @@
 import { generateText, Output } from 'ai'
-import { createXai } from '@ai-sdk/xai'
 import { z } from 'zod'
 import type { AuditEvent, Claim, Evidence } from '@/lib/audit-types'
 
 export const maxDuration = 60
 
-// Call xAI (Grok) directly with a native xAI API key (starts with "xai-").
-// This does NOT go through the Vercel AI Gateway, so it needs an xAI key,
-// not a gateway key.
-const xai = createXai({
-  apiKey: process.env.XAI_API_KEY ?? process.env.AI_GATEWAY_API_KEY,
-})
-const MODEL = xai('grok-3')
+// Routed through the Vercel AI Gateway. Anthropic is zero-config in v0 —
+// no per-provider key or separate billing setup required.
+const MODEL = 'anthropic/claude-haiku-4.5'
 
 // ---------------------------------------------------------------------------
 // Schemas (server-side validation for each agent's structured output)
@@ -155,16 +150,6 @@ export async function POST(req: Request) {
       status: 400,
       headers: { 'content-type': 'application/json' },
     })
-  }
-
-  if (!process.env.XAI_API_KEY && !process.env.AI_GATEWAY_API_KEY) {
-    return new Response(
-      JSON.stringify({
-        error:
-          'No xAI API key found. Set XAI_API_KEY (starts with "xai-") to run audits with Grok.',
-      }),
-      { status: 500, headers: { 'content-type': 'application/json' } },
-    )
   }
 
   const encoder = new TextEncoder()
