@@ -196,7 +196,7 @@ export async function POST(req: Request) {
         )
 
         const company = factFinder.output.company || fallbackName
-        send({ type: 'meta', company, fetched, url })
+        send({ type: 'meta', company, fetched, url, keyPoolSize: keyPool.size })
 
         const claims: Claim[] = factFinder.output.claims.map((c, i) => ({
           id: `claim-${i + 1}`,

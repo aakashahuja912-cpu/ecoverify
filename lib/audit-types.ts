@@ -57,7 +57,13 @@ export interface ClaimVerdict {
 
 // Discriminated union of every event streamed from the audit route.
 export type AuditEvent =
-  | { type: 'meta'; company: string; fetched: boolean; url: string }
+  | {
+      type: 'meta'
+      company: string
+      fetched: boolean
+      url: string
+      keyPoolSize: number
+    }
   | { type: 'agent'; agent: AgentId; state: AgentState; detail?: string }
   | { type: 'claims'; claims: Claim[] }
   | { type: 'evidence'; claimId: string; evidence: Evidence[] }
