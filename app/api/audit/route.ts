@@ -5,10 +5,12 @@ import type { AuditEvent, Claim, Evidence } from '@/lib/audit-types'
 
 export const maxDuration = 60
 
+// Uses a direct Google Generative AI key (no Vercel AI Gateway), so it bypasses
+// the Gateway credit-card requirement. Set GOOGLE_GENERATIVE_AI_API_KEY.
 const google = createGoogleGenerativeAI({
   apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
 })
-const MODEL = google('gemini-2.5-flash')
+const MODEL = google('gemini-3.6-flash')
 
 // ---------------------------------------------------------------------------
 // Schemas (server-side validation for each agent's structured output)
@@ -158,7 +160,7 @@ export async function POST(req: Request) {
     return new Response(
       JSON.stringify({
         error:
-          'GOOGLE_GENERATIVE_AI_API_KEY is not set. Add it to run audits.',
+          'GOOGLE_GENERATIVE_AI_API_KEY is not set. Add your Gemini API key to run audits.',
       }),
       { status: 500, headers: { 'content-type': 'application/json' } },
     )
