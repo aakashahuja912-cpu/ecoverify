@@ -1,11 +1,17 @@
 import { generateText, Output } from 'ai'
+import { createXai } from '@ai-sdk/xai'
 import { z } from 'zod'
 import type { AuditEvent, Claim, Evidence } from '@/lib/audit-types'
 
 export const maxDuration = 60
 
-// Routed through the Vercel AI Gateway. xAI (Grok) requires AI_GATEWAY_API_KEY.
-const MODEL = 'xai/grok-4.1-fast-non-reasoning'
+// Call xAI (Grok) directly with a native xAI API key (starts with "xai-").
+// This does NOT go through the Vercel AI Gateway, so it needs an xAI key,
+// not a gateway key.
+const xai = createXai({
+  apiKey: process.env.XAI_API_KEY ?? process.env.AI_GATEWAY_API_KEY,
+})
+const MODEL = xai('grok-3')
 
 // ---------------------------------------------------------------------------
 // Schemas (server-side validation for each agent's structured output)
@@ -151,11 +157,11 @@ export async function POST(req: Request) {
     })
   }
 
-  if (!process.env.AI_GATEWAY_API_KEY) {
+  if (!process.env.XAI_API_KEY && !process.env.AI_GATEWAY_API_KEY) {
     return new Response(
       JSON.stringify({
         error:
-          'AI_GATEWAY_API_KEY is not set. Add it to run audits with Grok.',
+          'No xAI API key found. Set XAI_API_KEY (starts with "xai-") to run audits with Grok.',
       }),
       { status: 500, headers: { 'content-type': 'application/json' } },
     )
