@@ -1,16 +1,23 @@
 import { generateText, Output } from 'ai'
+import { createOpenRouter } from '@openrouter/ai-sdk-provider'
 import { z } from 'zod'
 import type { AuditEvent, Claim, Evidence } from '@/lib/audit-types'
-import { createRotatingKeyPool } from '@/lib/rotating-keys'
 
 export const maxDuration = 60
 
-// Uses direct Google Generative AI keys (no Vercel AI Gateway), so it bypasses
-// the Gateway credit-card requirement. Configure one or more keys via
-// GOOGLE_GENERATIVE_AI_API_KEY (comma-separated) and/or
-// GOOGLE_GENERATIVE_AI_API_KEY_1..N — the pool rotates across them and fails
-// over automatically on rate-limit / quota / auth errors.
-const MODEL_ID = 'gemini-3.6-flash'
+// Routes through OpenRouter, which aggregates many providers behind one key.
+// Set OPENROUTER_API_KEY in the project environment.
+const openrouter = createOpenRouter({
+  apiKey: process.env.OPENROUTER_API_KEY,
+})
+
+// Ordered list of OpenRouter model IDs. If the primary model is rate-limited or
+// out of credits, the pipeline automatically fails over to the next one.
+const MODELS = [
+  openrouter.chat('google/gemini-2.5-flash'),
+  openrouter.chat('openai/gpt-4o-mini'),
+  openrouter.chat('anthropic/claude-3.5-haiku'),
+] as const
 
 // ---------------------------------------------------------------------------
 // Schemas (server-side validation for each agent's structured output)
@@ -142,6 +149,35 @@ function domainToName(url: string): string {
   }
 }
 
+// Generates structured output against OpenRouter, trying each model in MODELS
+// until one succeeds. If a model is rate-limited / out of credits, we advance
+// to the next provider so a single exhausted key never breaks the audit.
+async function generateWithFallback<S extends z.ZodTypeAny>(opts: {
+  schema: S
+  system: string
+  prompt: string
+}): Promise<z.infer<S>> {
+  let lastErr: unknown
+  for (const model of MODELS) {
+    try {
+      const { output } = await generateText({
+        model,
+        output: Output.object({ schema: opts.schema }),
+        system: opts.system,
+        prompt: opts.prompt,
+      })
+      return output as z.infer<S>
+    } catch (err) {
+      lastErr = err
+      console.log(
+        `[v0] model "${model.modelId}" failed, trying next fallback:`,
+        (err as Error)?.message,
+      )
+    }
+  }
+  throw lastErr
+}
+
 // ---------------------------------------------------------------------------
 // Route
 // ---------------------------------------------------------------------------
@@ -156,12 +192,11 @@ export async function POST(req: Request) {
     })
   }
 
-  const keyPool = createRotatingKeyPool()
-  if (!keyPool) {
+  if (!process.env.OPENROUTER_API_KEY) {
     return new Response(
       JSON.stringify({
         error:
-          'No Gemini API key configured. Set GOOGLE_GENERATIVE_AI_API_KEY (one key, or several comma-separated) to run audits.',
+          'OPENROUTER_API_KEY is not set. Add your OpenRouter API key to run audits.',
       }),
       { status: 500, headers: { 'content-type': 'application/json' } },
     )
@@ -185,20 +220,17 @@ export async function POST(req: Request) {
 
         // ---- Agent 1: Fact-Finder -------------------------------------
         send({ type: 'agent', agent: 'fact-finder', state: 'running' })
-        const factFinder = await keyPool.run(MODEL_ID, (model) =>
-          generateText({
-          model,
-          output: Output.object({ schema: factFinderSchema }),
+        const factFinder = await generateWithFallback({
+          schema: factFinderSchema,
           system:
             'You are the Fact-Finder, an investigative sustainability analyst. Extract 3-5 of the most concrete, checkable environmental/social claims a company makes about itself. Prefer claims with numbers, targets, dates, or specific practices. Flag vague marketing puffery.',
           prompt: pageContext,
-          }),
-        )
+        })
 
-        const company = factFinder.output.company || fallbackName
-        send({ type: 'meta', company, fetched, url, keyPoolSize: keyPool.size })
+        const company = factFinder.company || fallbackName
+        send({ type: 'meta', company, fetched, url })
 
-        const claims: Claim[] = factFinder.output.claims.map((c, i) => ({
+        const claims: Claim[] = factFinder.claims.map((c, i) => ({
           id: `claim-${i + 1}`,
           text: c.text,
           category: c.category,
@@ -214,16 +246,13 @@ export async function POST(req: Request) {
         const evidenceByClaim = await Promise.all(
           claims.map(async (claim) => {
             try {
-              const challenger = await keyPool.run(MODEL_ID, (model) =>
-                generateText({
-                model,
-                output: Output.object({ schema: challengerSchema }),
+              const challenger = await generateWithFallback({
+                schema: challengerSchema,
                 system:
                   'You are the Challenger, a skeptical investigative journalist. For the given corporate sustainability claim, search your knowledge of the PUBLIC RECORD (regulatory databases, court filings, reputable news, NGO reports, scientific studies, financial disclosures) for evidence that contradicts, contextualizes, or supports it. Be rigorous and fair. Never invent specific URLs. If you have no documented evidence, return a single honest "context" item stating that no corroborating public evidence was found and independent verification is required. Prefer contradicting or contextual evidence where the record genuinely warrants scrutiny.',
                 prompt: `Company: ${company}\nClaim: "${claim.text}"\nCategory: ${claim.category}\nMetric: ${claim.metric ?? 'none'}\nTimeframe: ${claim.timeframe ?? 'none'}`,
-                }),
-              )
-              const evidence: Evidence[] = challenger.output.evidence
+              })
+              const evidence: Evidence[] = challenger.evidence
               send({ type: 'evidence', claimId: claim.id, evidence })
               return { claimId: claim.id, evidence }
             } catch {
@@ -260,27 +289,24 @@ export async function POST(req: Request) {
           })
           .join('\n\n')
 
-        const judge = await keyPool.run(MODEL_ID, (model) =>
-          generateText({
-          model,
-          output: Output.object({ schema: judgeSchema }),
+        const judge = await generateWithFallback({
+          schema: judgeSchema,
           system:
             'You are the Judge. For each claim, weigh the claim against its evidence and issue a verdict: "verified" (strong support, no contradiction), "needs_context" (technically true but omits material context), "misleading" (contradicted or cherry-picked), or "unsubstantiated" (vague/no evidence). Assign a riskLevel and a confidence. Then compute an overall greenwash risk score 0-100 (higher = more greenwashing risk), weighting contradicted and unsubstantiated claims heavily. Ground every reasoning line in the supplied evidence. Return a verdict for every claim id.',
           prompt: `Company: ${company}\n\nDossier:\n${dossier}`,
-          }),
-        )
+        })
 
-        for (const v of judge.output.verdicts) {
+        for (const v of judge.verdicts) {
           send({ type: 'verdict', verdict: v })
         }
         send({ type: 'agent', agent: 'judge', state: 'done' })
 
         send({
           type: 'result',
-          score: Math.round(judge.output.score),
-          grade: scoreToGrade(judge.output.score),
-          headline: judge.output.headline,
-          summary: judge.output.summary,
+          score: Math.round(judge.score),
+          grade: scoreToGrade(judge.score),
+          headline: judge.headline,
+          summary: judge.summary,
         })
       } catch (err) {
         const raw = (err as Error)?.message || ''
