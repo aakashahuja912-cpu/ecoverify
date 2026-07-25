@@ -62,7 +62,6 @@ export type AuditEvent =
       company: string
       fetched: boolean
       url: string
-      keyPoolSize: number
     }
   | { type: 'agent'; agent: AgentId; state: AgentState; detail?: string }
   | { type: 'claims'; claims: Claim[] }
