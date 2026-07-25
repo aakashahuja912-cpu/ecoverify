@@ -9,6 +9,10 @@ export const maxDuration = 60
 // of models behind one key/endpoint, so there's no need for a rotating key
 // pool. Configure OPENROUTER_API_KEY in the environment.
 const MODEL_ID = 'google/gemini-2.5-flash'
+// Cap output tokens so requests stay within limited (e.g. free-tier) OpenRouter
+// credit budgets. OpenRouter reserves credits for the full max_tokens up front,
+// and the model otherwise defaults to a very large ceiling.
+const MAX_OUTPUT_TOKENS = 4096
 
 // ---------------------------------------------------------------------------
 // Schemas (server-side validation for each agent's structured output)
@@ -189,6 +193,7 @@ export async function POST(req: Request) {
         send({ type: 'agent', agent: 'fact-finder', state: 'running' })
         const factFinder = await generateText({
           model,
+          maxOutputTokens: MAX_OUTPUT_TOKENS,
           output: Output.object({ schema: factFinderSchema }),
           system:
             'You are the Fact-Finder, an investigative sustainability analyst. Extract 3-5 of the most concrete, checkable environmental/social claims a company makes about itself. Prefer claims with numbers, targets, dates, or specific practices. Flag vague marketing puffery.',
@@ -216,6 +221,7 @@ export async function POST(req: Request) {
             try {
               const challenger = await generateText({
                 model,
+                maxOutputTokens: MAX_OUTPUT_TOKENS,
                 output: Output.object({ schema: challengerSchema }),
                 system:
                   'You are the Challenger, a skeptical investigative journalist. For the given corporate sustainability claim, search your knowledge of the PUBLIC RECORD (regulatory databases, court filings, reputable news, NGO reports, scientific studies, financial disclosures) for evidence that contradicts, contextualizes, or supports it. Be rigorous and fair. Never invent specific URLs. If you have no documented evidence, return a single honest "context" item stating that no corroborating public evidence was found and independent verification is required. Prefer contradicting or contextual evidence where the record genuinely warrants scrutiny.',
@@ -260,6 +266,7 @@ export async function POST(req: Request) {
 
         const judge = await generateText({
           model,
+          maxOutputTokens: MAX_OUTPUT_TOKENS,
           output: Output.object({ schema: judgeSchema }),
           system:
             'You are the Judge. For each claim, weigh the claim against its evidence and issue a verdict: "verified" (strong support, no contradiction), "needs_context" (technically true but omits material context), "misleading" (contradicted or cherry-picked), or "unsubstantiated" (vague/no evidence). Assign a riskLevel and a confidence. Then compute an overall greenwash risk score 0-100 (higher = more greenwashing risk), weighting contradicted and unsubstantiated claims heavily. Ground every reasoning line in the supplied evidence. Return a verdict for every claim id.',
