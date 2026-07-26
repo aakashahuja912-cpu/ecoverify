@@ -1,16 +1,13 @@
 import { generateText, Output } from 'ai'
-import { createOpenRouter } from '@openrouter/ai-sdk-provider'
 import { z } from 'zod'
 import type { AuditEvent, Claim, Evidence } from '@/lib/audit-types'
 
 export const maxDuration = 60
 
-// Uses a single OpenRouter API key for all agents. Configure OPENROUTER_API_KEY
-// in the environment.
+// All agents run through the Vercel AI Gateway (zero-config for supported
+// providers such as Google). The model string is resolved by the AI SDK.
 const MODEL_ID = 'google/gemini-2.5-flash'
-// Cap output tokens so requests stay within limited (e.g. free-tier) OpenRouter
-// credit budgets. OpenRouter reserves credits for the full max_tokens up front,
-// and the model otherwise defaults to a very large ceiling.
+// Cap output tokens to keep requests bounded.
 const MAX_OUTPUT_TOKENS = 4096
 
 // ---------------------------------------------------------------------------
@@ -106,24 +103,33 @@ function scoreToGrade(score: number): string {
 async function fetchPageText(
   url: string,
 ): Promise<{ text: string; fetched: boolean }> {
+  const apiKey = process.env.FIRECRAWL_API_KEY
+  if (!apiKey) return { text: '', fetched: false }
+
   try {
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 9000)
-    const res = await fetch(url, {
+    const timeout = setTimeout(() => controller.abort(), 30000)
+    const res = await fetch('https://api.firecrawl.dev/v1/scrape', {
+      method: 'POST',
       signal: controller.signal,
       headers: {
-        'User-Agent':
-          'Mozilla/5.0 (compatible; EcoVerifyBot/1.0; +https://ecoverify.example)',
+        Authorization: `Bearer ${apiKey}`,
+        'content-type': 'application/json',
       },
+      body: JSON.stringify({
+        url,
+        formats: ['markdown'],
+        onlyMainContent: true,
+      }),
     })
     clearTimeout(timeout)
     if (!res.ok) return { text: '', fetched: false }
-    const html = await res.text()
-    const text = html
-      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/&[a-z]+;/gi, ' ')
+
+    const json = (await res.json()) as {
+      success?: boolean
+      data?: { markdown?: string }
+    }
+    const text = (json.data?.markdown ?? '')
       .replace(/\s+/g, ' ')
       .trim()
       .slice(0, 7000)
@@ -157,20 +163,7 @@ export async function POST(req: Request) {
     })
   }
 
-  if (!process.env.OPENROUTER_API_KEY) {
-    return new Response(
-      JSON.stringify({
-        error:
-          'No OpenRouter API key configured. Set OPENROUTER_API_KEY to run audits.',
-      }),
-      { status: 500, headers: { 'content-type': 'application/json' } },
-    )
-  }
-
-  const openrouter = createOpenRouter({
-    apiKey: process.env.OPENROUTER_API_KEY,
-  })
-  const model = openrouter(MODEL_ID)
+  const model = MODEL_ID
 
   const encoder = new TextEncoder()
 
