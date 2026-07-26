@@ -54,45 +54,45 @@
 }
 
 :root {
-  color-scheme: light;
-  --background: oklch(0.985 0.006 145);
-  --foreground: oklch(0.22 0.02 155);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.22 0.02 155);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.22 0.02 155);
-  --primary: oklch(0.48 0.09 168);
-  --primary-foreground: oklch(0.98 0.01 150);
-  --secondary: oklch(0.95 0.012 150);
-  --secondary-foreground: oklch(0.3 0.03 160);
-  --muted: oklch(0.95 0.008 150);
-  --muted-foreground: oklch(0.52 0.02 155);
-  --accent: oklch(0.93 0.03 160);
-  --accent-foreground: oklch(0.3 0.05 165);
-  --destructive: oklch(0.55 0.2 25);
-  --border: oklch(0.9 0.012 150);
-  --input: oklch(0.9 0.012 150);
-  --ring: oklch(0.48 0.09 168);
-  --risk-low: oklch(0.6 0.13 155);
-  --risk-low-foreground: oklch(0.98 0.01 150);
-  --risk-medium: oklch(0.75 0.15 75);
-  --risk-medium-foreground: oklch(0.28 0.05 70);
-  --risk-high: oklch(0.55 0.2 25);
-  --risk-high-foreground: oklch(0.98 0.01 30);
-  --chart-1: oklch(0.48 0.09 168);
-  --chart-2: oklch(0.6 0.13 155);
-  --chart-3: oklch(0.75 0.15 75);
-  --chart-4: oklch(0.55 0.2 25);
-  --chart-5: oklch(0.4 0.04 200);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.98 0.008 150);
-  --sidebar-foreground: oklch(0.22 0.02 155);
-  --sidebar-primary: oklch(0.48 0.09 168);
-  --sidebar-primary-foreground: oklch(0.98 0.01 150);
-  --sidebar-accent: oklch(0.93 0.03 160);
-  --sidebar-accent-foreground: oklch(0.3 0.05 165);
-  --sidebar-border: oklch(0.9 0.012 150);
-  --sidebar-ring: oklch(0.48 0.09 168);
+  color-scheme: dark;
+  --background: #030712;
+  --foreground: #ffffff;
+  --card: #111827;
+  --card-foreground: #ffffff;
+  --popover: #0b1220;
+  --popover-foreground: #ffffff;
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --secondary: #7c3aed;
+  --secondary-foreground: #ffffff;
+  --muted: #111827;
+  --muted-foreground: #9ca3af;
+  --accent: #06b6d4;
+  --accent-foreground: #030712;
+  --destructive: #ef4444;
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.1);
+  --ring: #2563eb;
+  --risk-low: #22c55e;
+  --risk-low-foreground: #052e16;
+  --risk-medium: #f59e0b;
+  --risk-medium-foreground: #431407;
+  --risk-high: #ef4444;
+  --risk-high-foreground: #450a0a;
+  --chart-1: #2563eb;
+  --chart-2: #7c3aed;
+  --chart-3: #06b6d4;
+  --chart-4: #22c55e;
+  --chart-5: #f59e0b;
+  --radius: 0.875rem;
+  --sidebar: #0b1220;
+  --sidebar-foreground: #ffffff;
+  --sidebar-primary: #2563eb;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #111827;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-ring: #2563eb;
 }
 
 .dark {
@@ -179,5 +179,87 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+@layer utilities {
+  .bg-grid {
+    background-image: linear-gradient(
+        to right,
+        rgba(255, 255, 255, 0.04) 1px,
+        transparent 1px
+      ),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+    background-size: 44px 44px;
+  }
+
+  .text-gradient {
+    background: linear-gradient(100deg, #ffffff 0%, #93c5fd 45%, #67e8f9 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .gradient-border {
+    position: relative;
+    background:
+      linear-gradient(var(--card), var(--card)) padding-box,
+      linear-gradient(135deg, rgba(37, 99, 235, 0.6), rgba(124, 58, 237, 0.35), rgba(6, 182, 212, 0.5))
+        border-box;
+    border: 1px solid transparent;
+  }
+
+  .glow-primary {
+    box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.25), 0 20px 60px -20px rgba(37, 99, 235, 0.45);
+  }
+}
+
+@keyframes cf-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes cf-gradient-pan {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes cf-pulse-line {
+  0% {
+    opacity: 0.15;
+  }
+  50% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0.15;
+  }
+}
+
+.animate-cf-float {
+  animation: cf-float 6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .animate-cf-float {
+    animation: none;
   }
 }

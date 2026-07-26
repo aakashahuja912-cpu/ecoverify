@@ -16,15 +16,24 @@ const spaceGrotesk = Space_Grotesk({
 })
 
 export const metadata: Metadata = {
-  title: 'EcoVerify — The Greenwash Sentinel',
+  title: 'ContextForge AI — Transform Unstructured Data into Intelligent Decisions',
   description:
-    'Autonomous multi-agent auditor that cross-examines corporate sustainability claims against the public record and outputs a defensible Greenwash Risk Score.',
+    'ContextForge AI collects, cleans, and structures knowledge from websites, PDFs, GitHub, APIs, and research papers — then uses multi-agent RAG to deliver grounded, cited answers.',
   generator: 'v0.app',
+  keywords: [
+    'AI agents',
+    'RAG',
+    'retrieval augmented generation',
+    'knowledge graph',
+    'semantic search',
+    'vector database',
+    'research automation',
+  ],
 }
 
 export const viewport: Viewport = {
-  colorScheme: 'light',
-  themeColor: '#0f5c4a',
+  colorScheme: 'dark',
+  themeColor: '#030712',
 }
 
 export default function RootLayout({
@@ -35,7 +44,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`light ${inter.variable} ${spaceGrotesk.variable} bg-background`}
+      className={`dark ${inter.variable} ${spaceGrotesk.variable} bg-background`}
     >
       <body className="font-sans antialiased">
         {children}
