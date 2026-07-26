@@ -8,9 +8,11 @@ import {
   RotateCcw,
   Building2,
   Info,
+  FileDown,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useAudit } from '@/lib/use-audit'
+import { generateAuditReport } from '@/lib/generate-report'
 import { AgentPipeline } from '@/components/agent-pipeline'
 import { RiskGauge } from '@/components/risk-gauge'
 import { VerificationCard } from '@/components/verification-card'
@@ -25,6 +27,7 @@ const EXAMPLES = [
 export function AuditApp() {
   const { state, run, reset } = useAudit()
   const [url, setUrl] = useState('')
+  const [lastUrl, setLastUrl] = useState('')
 
   const isRunning = state.status === 'running'
   const hasStarted = state.status !== 'idle'
@@ -36,6 +39,7 @@ export function AuditApp() {
       ? trimmed
       : `https://${trimmed}`
     setUrl(normalized)
+    setLastUrl(normalized)
     run(normalized)
   }
 
@@ -88,6 +92,7 @@ export function AuditApp() {
               onClick={() => {
                 reset()
                 setUrl('')
+                setLastUrl('')
               }}
               className="h-11 px-3"
             >
@@ -105,6 +110,7 @@ export function AuditApp() {
                 key={ex.url}
                 onClick={() => {
                   setUrl(ex.url)
+                  setLastUrl(ex.url)
                   run(ex.url)
                 }}
                 className="rounded-full border border-border bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
@@ -152,18 +158,34 @@ export function AuditApp() {
 
       {/* Result summary */}
       {state.result && (
-        <section className="flex flex-col items-center gap-6 rounded-2xl border border-border bg-card p-6 shadow-sm md:flex-row md:items-center md:gap-8">
-          <RiskGauge score={state.result.score} grade={state.result.grade} />
-          <div className="flex-1 text-center md:text-left">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Greenwash verdict
+        <section className="flex flex-col gap-6 rounded-2xl border border-border bg-card p-6 shadow-sm">
+          <div className="flex flex-col items-center gap-6 md:flex-row md:items-center md:gap-8">
+            <RiskGauge score={state.result.score} grade={state.result.grade} />
+            <div className="flex-1 text-center md:text-left">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Greenwash verdict
+              </p>
+              <h3 className="mt-1 text-balance font-display text-2xl font-bold text-foreground">
+                {state.result.headline}
+              </h3>
+              <p className="mt-2 text-pretty leading-relaxed text-muted-foreground">
+                {state.result.summary}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-col gap-2 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-muted-foreground">
+              Export the full verdict and every verification card as a
+              shareable PDF.
             </p>
-            <h3 className="mt-1 text-balance font-display text-2xl font-bold text-foreground">
-              {state.result.headline}
-            </h3>
-            <p className="mt-2 text-pretty leading-relaxed text-muted-foreground">
-              {state.result.summary}
-            </p>
+            <Button
+              variant="outline"
+              onClick={() => generateAuditReport(state, lastUrl)}
+              className="h-10 shrink-0 px-4"
+            >
+              <FileDown className="size-4" />
+              Download PDF report
+            </Button>
           </div>
         </section>
       )}
