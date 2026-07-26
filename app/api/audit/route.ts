@@ -5,9 +5,8 @@ import type { AuditEvent, Claim, Evidence } from '@/lib/audit-types'
 
 export const maxDuration = 60
 
-// Uses a single OpenRouter API key for all agents. OpenRouter proxies hundreds
-// of models behind one key/endpoint, so there's no need for a rotating key
-// pool. Configure OPENROUTER_API_KEY in the environment.
+// Uses a single OpenRouter API key for all agents. Configure OPENROUTER_API_KEY
+// in the environment.
 const MODEL_ID = 'google/gemini-2.5-flash'
 // Cap output tokens so requests stay within limited (e.g. free-tier) OpenRouter
 // credit budgets. OpenRouter reserves credits for the full max_tokens up front,
