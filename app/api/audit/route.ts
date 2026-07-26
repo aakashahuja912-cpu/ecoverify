@@ -1,13 +1,16 @@
 import { generateText, Output } from 'ai'
+import { createOpenRouter } from '@openrouter/ai-sdk-provider'
 import { z } from 'zod'
 import type { AuditEvent, Claim, Evidence } from '@/lib/audit-types'
 
 export const maxDuration = 60
 
-// All agents run through the Vercel AI Gateway (zero-config for supported
-// providers such as Google). The model string is resolved by the AI SDK.
+// Uses a single OpenRouter API key for all agents. Configure OPENROUTER_API_KEY
+// in the environment.
 const MODEL_ID = 'google/gemini-2.5-flash'
-// Cap output tokens to keep requests bounded.
+// Cap output tokens so requests stay within limited (e.g. free-tier) OpenRouter
+// credit budgets. OpenRouter reserves credits for the full max_tokens up front,
+// and the model otherwise defaults to a very large ceiling.
 const MAX_OUTPUT_TOKENS = 4096
 
 // ---------------------------------------------------------------------------
@@ -163,7 +166,20 @@ export async function POST(req: Request) {
     })
   }
 
-  const model = MODEL_ID
+  if (!process.env.OPENROUTER_API_KEY) {
+    return new Response(
+      JSON.stringify({
+        error:
+          'No OpenRouter API key configured. Set OPENROUTER_API_KEY to run audits.',
+      }),
+      { status: 500, headers: { 'content-type': 'application/json' } },
+    )
+  }
+
+  const openrouter = createOpenRouter({
+    apiKey: process.env.OPENROUTER_API_KEY,
+  })
+  const model = openrouter(MODEL_ID)
 
   const encoder = new TextEncoder()
 
