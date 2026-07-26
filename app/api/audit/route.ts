@@ -106,24 +106,33 @@ function scoreToGrade(score: number): string {
 async function fetchPageText(
   url: string,
 ): Promise<{ text: string; fetched: boolean }> {
+  const apiKey = process.env.FIRECRAWL_API_KEY
+  if (!apiKey) return { text: '', fetched: false }
+
   try {
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 9000)
-    const res = await fetch(url, {
+    const timeout = setTimeout(() => controller.abort(), 30000)
+    const res = await fetch('https://api.firecrawl.dev/v1/scrape', {
+      method: 'POST',
       signal: controller.signal,
       headers: {
-        'User-Agent':
-          'Mozilla/5.0 (compatible; EcoVerifyBot/1.0; +https://ecoverify.example)',
+        Authorization: `Bearer ${apiKey}`,
+        'content-type': 'application/json',
       },
+      body: JSON.stringify({
+        url,
+        formats: ['markdown'],
+        onlyMainContent: true,
+      }),
     })
     clearTimeout(timeout)
     if (!res.ok) return { text: '', fetched: false }
-    const html = await res.text()
-    const text = html
-      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/&[a-z]+;/gi, ' ')
+
+    const json = (await res.json()) as {
+      success?: boolean
+      data?: { markdown?: string }
+    }
+    const text = (json.data?.markdown ?? '')
       .replace(/\s+/g, ' ')
       .trim()
       .slice(0, 7000)
