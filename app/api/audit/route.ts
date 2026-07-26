@@ -1,12 +1,16 @@
 import { generateText, Output } from 'ai'
+import { createOpenRouter } from '@openrouter/ai-sdk-provider'
 import { z } from 'zod'
 import type { AuditEvent, Claim, Evidence } from '@/lib/audit-types'
-import { getGeminiKeys, withRotatingGemini } from '@/lib/gemini'
 
 export const maxDuration = 60
 
-// Cap output tokens so requests stay within limited (e.g. free-tier) Gemini
-// quotas. The model otherwise defaults to a very large ceiling.
+// Uses a single OpenRouter API key for all agents. Configure OPENROUTER_API_KEY
+// in the environment.
+const MODEL_ID = 'google/gemini-2.5-flash'
+// Cap output tokens so requests stay within limited (e.g. free-tier) OpenRouter
+// credit budgets. OpenRouter reserves credits for the full max_tokens up front,
+// and the model otherwise defaults to a very large ceiling.
 const MAX_OUTPUT_TOKENS = 4096
 
 // ---------------------------------------------------------------------------
@@ -153,15 +157,20 @@ export async function POST(req: Request) {
     })
   }
 
-  if (getGeminiKeys().length === 0) {
+  if (!process.env.OPENROUTER_API_KEY) {
     return new Response(
       JSON.stringify({
         error:
-          'No Gemini API keys configured. Set GEMINI_API_KEY_1, GEMINI_API_KEY_2, ... to run audits.',
+          'No OpenRouter API key configured. Set OPENROUTER_API_KEY to run audits.',
       }),
       { status: 500, headers: { 'content-type': 'application/json' } },
     )
   }
+
+  const openrouter = createOpenRouter({
+    apiKey: process.env.OPENROUTER_API_KEY,
+  })
+  const model = openrouter(MODEL_ID)
 
   const encoder = new TextEncoder()
 
@@ -181,16 +190,14 @@ export async function POST(req: Request) {
 
         // ---- Agent 1: Fact-Finder -------------------------------------
         send({ type: 'agent', agent: 'fact-finder', state: 'running' })
-        const factFinder = await withRotatingGemini((model) =>
-          generateText({
-            model,
-            maxOutputTokens: MAX_OUTPUT_TOKENS,
-            output: Output.object({ schema: factFinderSchema }),
-            system:
-              'You are the Fact-Finder, an investigative sustainability analyst. Extract 3-5 of the most concrete, checkable environmental/social claims a company makes about itself. Prefer claims with numbers, targets, dates, or specific practices. Flag vague marketing puffery.',
-            prompt: pageContext,
-          }),
-        )
+        const factFinder = await generateText({
+          model,
+          maxOutputTokens: MAX_OUTPUT_TOKENS,
+          output: Output.object({ schema: factFinderSchema }),
+          system:
+            'You are the Fact-Finder, an investigative sustainability analyst. Extract 3-5 of the most concrete, checkable environmental/social claims a company makes about itself. Prefer claims with numbers, targets, dates, or specific practices. Flag vague marketing puffery.',
+          prompt: pageContext,
+        })
 
         const company = factFinder.output.company || fallbackName
         send({ type: 'meta', company, fetched, url })
@@ -211,16 +218,14 @@ export async function POST(req: Request) {
         const evidenceByClaim = await Promise.all(
           claims.map(async (claim) => {
             try {
-              const challenger = await withRotatingGemini((model) =>
-                generateText({
-                  model,
-                  maxOutputTokens: MAX_OUTPUT_TOKENS,
-                  output: Output.object({ schema: challengerSchema }),
-                  system:
-                    'You are the Challenger, a skeptical investigative journalist. For the given corporate sustainability claim, search your knowledge of the PUBLIC RECORD (regulatory databases, court filings, reputable news, NGO reports, scientific studies, financial disclosures) for evidence that contradicts, contextualizes, or supports it. Be rigorous and fair. Never invent specific URLs. If you have no documented evidence, return a single honest "context" item stating that no corroborating public evidence was found and independent verification is required. Prefer contradicting or contextual evidence where the record genuinely warrants scrutiny.',
-                  prompt: `Company: ${company}\nClaim: "${claim.text}"\nCategory: ${claim.category}\nMetric: ${claim.metric ?? 'none'}\nTimeframe: ${claim.timeframe ?? 'none'}`,
-                }),
-              )
+              const challenger = await generateText({
+                model,
+                maxOutputTokens: MAX_OUTPUT_TOKENS,
+                output: Output.object({ schema: challengerSchema }),
+                system:
+                  'You are the Challenger, a skeptical investigative journalist. For the given corporate sustainability claim, search your knowledge of the PUBLIC RECORD (regulatory databases, court filings, reputable news, NGO reports, scientific studies, financial disclosures) for evidence that contradicts, contextualizes, or supports it. Be rigorous and fair. Never invent specific URLs. If you have no documented evidence, return a single honest "context" item stating that no corroborating public evidence was found and independent verification is required. Prefer contradicting or contextual evidence where the record genuinely warrants scrutiny.',
+                prompt: `Company: ${company}\nClaim: "${claim.text}"\nCategory: ${claim.category}\nMetric: ${claim.metric ?? 'none'}\nTimeframe: ${claim.timeframe ?? 'none'}`,
+              })
               const evidence: Evidence[] = challenger.output.evidence
               send({ type: 'evidence', claimId: claim.id, evidence })
               return { claimId: claim.id, evidence }
@@ -258,16 +263,14 @@ export async function POST(req: Request) {
           })
           .join('\n\n')
 
-        const judge = await withRotatingGemini((model) =>
-          generateText({
-            model,
-            maxOutputTokens: MAX_OUTPUT_TOKENS,
-            output: Output.object({ schema: judgeSchema }),
-            system:
-              'You are the Judge. For each claim, weigh the claim against its evidence and issue a verdict: "verified" (strong support, no contradiction), "needs_context" (technically true but omits material context), "misleading" (contradicted or cherry-picked), or "unsubstantiated" (vague/no evidence). Assign a riskLevel and a confidence. Then compute an overall greenwash risk score 0-100 (higher = more greenwashing risk), weighting contradicted and unsubstantiated claims heavily. Ground every reasoning line in the supplied evidence. Return a verdict for every claim id.',
-            prompt: `Company: ${company}\n\nDossier:\n${dossier}`,
-          }),
-        )
+        const judge = await generateText({
+          model,
+          maxOutputTokens: MAX_OUTPUT_TOKENS,
+          output: Output.object({ schema: judgeSchema }),
+          system:
+            'You are the Judge. For each claim, weigh the claim against its evidence and issue a verdict: "verified" (strong support, no contradiction), "needs_context" (technically true but omits material context), "misleading" (contradicted or cherry-picked), or "unsubstantiated" (vague/no evidence). Assign a riskLevel and a confidence. Then compute an overall greenwash risk score 0-100 (higher = more greenwashing risk), weighting contradicted and unsubstantiated claims heavily. Ground every reasoning line in the supplied evidence. Return a verdict for every claim id.',
+          prompt: `Company: ${company}\n\nDossier:\n${dossier}`,
+        })
 
         for (const v of judge.output.verdicts) {
           send({ type: 'verdict', verdict: v })
